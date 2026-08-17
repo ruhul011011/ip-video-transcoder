@@ -1,88 +1,90 @@
-# Complete guide: Install on Ubuntu VPS
+# Complete setup from GitHub → Ubuntu VPS
 
-This guide takes your Windows backup and runs it 24/7 on a remote Ubuntu VPS.
+Repo: https://github.com/ruhul011011/ip-video-transcoder
 
-**Your VPS:** 8 vCores · 24 GB RAM · 200 GB NVMe · Ubuntu  
-**Encoder on VPS:** **H.264 (x264 software)** only (no NVIDIA GPU)
-
----
-
-## Before you start
-
-You need:
-
-1. VPS IP address  
-2. SSH user (often `ubuntu` or `root`)  
-3. Your Windows project folder: `IP Video Transcoder`  
-4. Optional: your `data\channels.json` backup (channel list)
+**VPS:** Ubuntu · 8 vCores · 24 GB RAM · no GPU  
+**Encoder on VPS:** **H.264 (x264 software)** only (not NVENC)
 
 ---
 
-## Step 1 — Prepare the project on Windows (optional cleanup)
+## 0) Make the GitHub repo reachable
 
-On your Windows PC, inside `IP Video Transcoder`:
+If `https://github.com/ruhul011011/ip-video-transcoder` opens in a browser **without login**, use the **public** steps below.
 
-1. You can keep `data\channels.json` (your channel list).
-2. Remember: on the VPS you must change every channel’s **Encoding** from **NVIDIA NVENC** → **H.264 (x264 software)**.
+If it shows **404**, the repo is **private**. Either:
 
----
-
-## Step 2 — Upload the project to the VPS
-
-### Option A — WinSCP / FileZilla (easiest)
-
-1. Connect with SFTP to your VPS IP (port 22).
-2. Upload the whole folder to:
-   ```text
-   /home/ubuntu/IP Video Transcoder
-   ```
-   (Use your real username if it is not `ubuntu`.)
-
-### Option B — PowerShell / scp
-
-From Windows PowerShell (adjust paths/IP/user):
-
-```powershell
-scp -r "C:\IP Video Transcoder" ubuntu@YOUR_VPS_IP:~/
-```
+- GitHub → repo → **Settings → General → Danger Zone → Change visibility → Public**, or  
+- keep it private and use a **Personal Access Token** (see Step 2B).
 
 ---
 
-## Step 3 — SSH into the VPS
+## 1) SSH into your VPS
+
+From your PC:
 
 ```bash
 ssh ubuntu@YOUR_VPS_IP
 ```
 
-Go to the app folder:
+(Replace `ubuntu` with your real username if different, and use your VPS IP.)
+
+Update packages once:
 
 ```bash
-cd ~/IP\ Video\ Transcoder
-ls
+sudo apt update
+sudo apt install -y git curl
 ```
-
-You should see `app`, `static`, `requirements.txt`, `install-ubuntu.sh`, etc.
 
 ---
 
-## Step 4 — Run the installer (does everything)
+## 2) Download the project from GitHub
+
+### 2A — Public repository (simplest)
+
+```bash
+cd ~
+git clone https://github.com/ruhul011011/ip-video-transcoder.git
+cd ip-video-transcoder
+ls
+```
+
+You should see files like `app`, `static`, `install-ubuntu.sh`, `requirements.txt`.
+
+### 2B — Private repository (token)
+
+1. GitHub → **Settings → Developer settings → Personal access tokens**  
+   Create a token with `repo` access.
+2. Clone with token:
+
+```bash
+cd ~
+git clone https://YOUR_GITHUB_USERNAME:YOUR_TOKEN@github.com/ruhul011011/ip-video-transcoder.git
+cd ip-video-transcoder
+```
+
+---
+
+## 3) Run the automatic installer
+
+> **Note:** Ubuntu 26.04 may ship Python 3.14. The installer automatically prefers **Python 3.12** because current app deps do not support 3.14 yet.
 
 ```bash
 chmod +x install-ubuntu.sh start-linux.sh
 sudo bash install-ubuntu.sh
 ```
 
-This will:
+This installs:
 
-- install `ffmpeg` + Python
-- create `.venv` and install packages
-- create `data/settings.json` (auto-restart ON)
-- install and start a **systemd** service named `ip-transcoder`
-- try to open firewall port **9527**
+- `ffmpeg` + Python  
+- Python packages (venv)  
+- systemd service `ip-transcoder` (starts on boot)  
+- opens port **9527** if `ufw` is active  
+
+Wait until it prints **Done** and a URL.
 
 ---
 
-## Step 5 — Open the web UI
+## 4) Open the web panel
 
 In your browser:
 
@@ -90,75 +92,82 @@ In your browser:
 http://YOUR_VPS_IP:9527
 ```
 
-If it does not load:
+### If the page does not load
 
-1. **VPS panel firewall / security group** → allow inbound **TCP 9527**
-2. Check service:
-   ```bash
-   sudo systemctl status ip-transcoder
-   ```
+1. In your **VPS control panel → Firewall / Security Group**, allow inbound **TCP 9527**.
+2. On the server check:
 
----
-
-## Step 6 — Fix encodings for VPS (required)
-
-For **each channel**:
-
-1. Select channel → **Stop Channel** (if running)
-2. **Edit**
-3. Encoding → **H.264 (x264 software)**  
-   (not NVENC, not VideoToolbox)
-4. Suggested VPS-safe settings for 8 channels:
-
-| Setting | SD (recommended for all 8) | HD (only 1–2 channels) |
-|--------|----------------------------|-------------------------|
-| Frame Size | 640×360 or 854×480 | 1280×720 |
-| Bitrate | 800–1200 | 2000–2500 |
-| FPS | 25 | 25 |
-| Keyframe | 2 | 2 |
-| CBR | ON | ON |
-
-5. **Apply** → **Start Channel**
+```bash
+sudo systemctl status ip-transcoder
+sudo journalctl -u ip-transcoder -n 50 --no-pager
+```
 
 ---
 
-## Step 7 — Confirm Global Settings
+## 5) Create / restore your channels
 
-Click **Global Settings** and keep:
+### New setup
+Use **New Channel** and add your IPTV → RTMP links.
 
-- ☑ Auto Start channels on app boot  
-- ☑ Auto Restart Streaming on Error after **3** seconds  
-- ☑ Seamless Streaming  
+### If you have Windows `channels.json` backup
+On Windows, copy:
 
-Save.
+`IP Video Transcoder\data\channels.json`
+
+Upload it (WinSCP) to the VPS as:
+
+`/home/ubuntu/ip-video-transcoder/data/channels.json`
+
+Then restart:
+
+```bash
+sudo systemctl restart ip-transcoder
+```
+
+**Required after Windows restore:** for every channel that used **NVIDIA NVENC**:
+
+1. Stop channel  
+2. Edit → Encoding = **H.264 (x264 software)**  
+3. Apply → Start  
 
 ---
 
-## Step 8 — Daily / ops commands
+## 6) Recommended settings on this VPS (8 channels)
+
+| Setting | Value |
+|--------|--------|
+| Encoding | **H.264 (x264 software)** |
+| Frame Size | 640×360 or 854×480 (safer for 8 streams) |
+| Bitrate | 800–1200 Kbps |
+| FPS | 25 |
+| Keyframe | 2 sec |
+| CBR | ON |
+
+**Global Settings:** keep Auto Restart on Error (3 sec) + Auto Start on boot + Seamless Streaming.
+
+---
+
+## 7) Useful commands
 
 ```bash
 # Status
 sudo systemctl status ip-transcoder
 
-# Restart app
+# Restart
 sudo systemctl restart ip-transcoder
 
 # Live logs
 sudo journalctl -u ip-transcoder -f
 
-# Stop app
-sudo systemctl stop ip-transcoder
+# Update from GitHub later
+cd ~/ip-video-transcoder
+git pull
+sudo systemctl restart ip-transcoder
 ```
-
-After reboot, the service starts automatically (`enable` was set by the installer).
 
 ---
 
-## Step 9 — Security (strongly recommended)
-
-The UI has **no password** by default.
-
-Minimum:
+## 8) Security (recommended)
 
 ```bash
 sudo ufw allow OpenSSH
@@ -166,36 +175,36 @@ sudo ufw allow 9527/tcp
 sudo ufw enable
 ```
 
-Better: allow 9527 only from your home/office IP in the VPS firewall panel.
+Better: in the VPS firewall, allow port **9527 only from your home IP**.
+
+---
+
+## Quick copy-paste (public repo)
+
+```bash
+sudo apt update
+sudo apt install -y git
+cd ~
+git clone https://github.com/ruhul011011/ip-video-transcoder.git
+cd ip-video-transcoder
+chmod +x install-ubuntu.sh start-linux.sh
+sudo bash install-ubuntu.sh
+```
+
+Then open: `http://YOUR_VPS_IP:9527`
 
 ---
 
 ## Troubleshooting
 
-| Problem | Fix |
-|--------|-----|
-| Page not loading | Open TCP 9527 in cloud firewall + `sudo systemctl status ip-transcoder` |
-| Channel ERROR mentioning nvenc / videotoolbox | Switch encoding to **x264 software** |
-| HD freezes / stuck | Too much CPU — lower resolution/bitrate or run fewer HD channels |
-| Service won’t start | `sudo journalctl -u ip-transcoder -n 100 --no-pager` |
-| ffmpeg missing | `sudo apt install -y ffmpeg` then `sudo systemctl restart ip-transcoder` |
+| Issue | Fix |
+|------|-----|
+| `git clone` 404 | Make repo **public**, or use token (Step 2B) |
+| UI not opening | Allow TCP **9527** in VPS firewall |
+| Channel error `nvenc` | Change encoding to **x264 software** |
+| Service failed | `sudo journalctl -u ip-transcoder -n 100 --no-pager` |
+| HD freezes | Lower resolution/bitrate or fewer HD channels |
 
 ---
 
-## Capacity reminder (your 8 vCore VPS)
-
-- **8× SD** → best stability  
-- **6× SD + 2× 720p** → usually OK  
-- **8× heavy 720p software** → may stutter  
-
-Your main benefit on the VPS is **stable high-speed internet**, which is what you wanted.
-
----
-
-## Files created for VPS
-
-| File | Purpose |
-|------|---------|
-| `install-ubuntu.sh` | Full auto install + systemd |
-| `start-linux.sh` | Manual foreground start |
-| `UBUNTU-VPS.md` | This guide |
+That’s the full path: **GitHub → clone on VPS → `install-ubuntu.sh` → open port 9527 → use x264**.

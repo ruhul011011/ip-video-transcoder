@@ -17,7 +17,8 @@ fi
 if [[ ! -d .venv ]]; then
   echo "Creating virtual environment..."
   python3 -m venv .venv
-  .venv/bin/pip install --upgrade pip
+  .venv/bin/pip install --upgrade pip setuptools wheel
+  export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
   .venv/bin/pip install -r requirements.txt
 fi
 

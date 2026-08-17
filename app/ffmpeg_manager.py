@@ -294,10 +294,14 @@ def _video_args(video: VideoSettings) -> List[str]:
 
     enc = video.encoding
     if enc == "libx264":
-        preset = video.preset if video.preset and video.preset != "veryfast" else "ultrafast"
+        # Prefer quality-friendly realtime presets. ultrafast looks blocky vs NVENC
+        # at the same bitrate (common when comparing Windows GPU vs Ubuntu VPS CPU).
+        preset = (video.preset or "veryfast").strip() or "veryfast"
+        if preset == "ultrafast":
+            preset = "veryfast"
         x264 = (
             f"keyint={gop}:min-keyint={gop}:scenecut=0:bframes=0:"
-            f"force-cfr=1:rc-lookahead=0:sync-lookahead=0:sliced-threads=1:"
+            f"force-cfr=1:rc-lookahead=10:sync-lookahead=0:sliced-threads=1:"
             f"nal-hrd={'cbr' if video.cbr else 'none'}:"
             f"vbv-maxrate={bitrate}:vbv-bufsize={bufsize}"
         )
@@ -307,7 +311,7 @@ def _video_args(video: VideoSettings) -> List[str]:
             "-tune",
             "zerolatency",
             "-profile:v",
-            "baseline",
+            "main",
             "-pix_fmt",
             "yuv420p",
             "-g",

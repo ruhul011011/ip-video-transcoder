@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 # One-shot installer for Ubuntu VPS (no GPU — uses x264 software encode)
+# Works on Ubuntu 24.04–26.04 (including Python 3.14-only hosts).
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVICE_NAME="ip-transcoder"
-SERVICE_USER="${SUDO_USER:-$USER}"
 HTTP_PORT="${HTTP_PORT:-9527}"
+
+if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+  SERVICE_USER="${SUDO_USER}"
+elif [[ "$(id -un)" != "root" ]]; then
+  SERVICE_USER="$(id -un)"
+else
+  SERVICE_USER="root"
+fi
 
 echo "=== IP Video Transcoder — Ubuntu installer ==="
 echo "App dir : $APP_DIR"
@@ -13,29 +21,31 @@ echo "User    : $SERVICE_USER"
 echo "Port    : $HTTP_PORT"
 echo
 
-if [[ "$(id -u)" -eq 0 && -z "${SUDO_USER:-}" ]]; then
-  echo "Run as a normal user with sudo, e.g.:  sudo bash install-ubuntu.sh"
-  echo "Or:  sudo -u ubuntu bash install-ubuntu.sh  (from that user's copy of the app)"
-fi
-
 export DEBIAN_FRONTEND=noninteractive
 echo "[1/6] Installing system packages..."
 sudo apt-get update -y
-sudo apt-get install -y ffmpeg python3 python3-venv python3-pip curl
+sudo apt-get install -y ffmpeg curl ca-certificates python3 python3-venv python3-pip build-essential
+
+PYTHON_BIN="$(command -v python3)"
+PY_VER="$("$PYTHON_BIN" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+echo "Using $PYTHON_BIN (Python $PY_VER)"
 
 echo "[2/6] Checking ffmpeg..."
 ffmpeg -version | head -n 1
 
 echo "[3/6] Creating Python venv + dependencies..."
 cd "$APP_DIR"
-python3 -m venv .venv
-.venv/bin/pip install --upgrade pip
+rm -rf .venv
+"$PYTHON_BIN" -m venv .venv
+.venv/bin/pip install --upgrade pip setuptools wheel
+
+# Python 3.14+: pydantic-core may need ABI3 forward-compat while building
+export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
 .venv/bin/pip install -r requirements.txt
 
 mkdir -p data
 chmod +x start-linux.sh 2>/dev/null || true
 
-# Sensible VPS defaults (software encode, auto-restart)
 if [[ ! -f data/settings.json ]]; then
   cat > data/settings.json <<EOF
 {
@@ -51,16 +61,14 @@ EOF
   echo "Wrote data/settings.json"
 fi
 
-# Empty channels file if missing — user will recreate or import
 if [[ ! -f data/channels.json ]]; then
   echo "[]" > data/channels.json
   echo "Wrote empty data/channels.json"
 fi
 
 echo "[4/6] Writing systemd service..."
-# Escape spaces in path for systemd
 UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
-PYTHON_BIN="$APP_DIR/.venv/bin/python"
+VENV_PYTHON="$APP_DIR/.venv/bin/python"
 
 sudo tee "$UNIT_PATH" >/dev/null <<EOF
 [Unit]
@@ -74,7 +82,7 @@ User=${SERVICE_USER}
 Group=${SERVICE_USER}
 WorkingDirectory=${APP_DIR}
 Environment=PYTHONUNBUFFERED=1
-ExecStart="${PYTHON_BIN}" -m uvicorn app.main:app --host 0.0.0.0 --port ${HTTP_PORT}
+ExecStart=${VENV_PYTHON} -m uvicorn app.main:app --host 0.0.0.0 --port ${HTTP_PORT}
 Restart=always
 RestartSec=3
 LimitNOFILE=65535
@@ -87,19 +95,22 @@ echo "[5/6] Enabling service..."
 sudo systemctl daemon-reload
 sudo systemctl enable --now "${SERVICE_NAME}"
 
-echo "[6/6] Firewall (ufw) — opening port ${HTTP_PORT} if ufw is active..."
+echo "[6/6] Firewall..."
 if command -v ufw >/dev/null 2>&1; then
   if sudo ufw status | grep -qi "Status: active"; then
     sudo ufw allow "${HTTP_PORT}/tcp"
     sudo ufw reload || true
   else
-    echo "ufw installed but not active — open port ${HTTP_PORT} in your VPS panel if needed."
+    echo "ufw installed but not active — open TCP ${HTTP_PORT} in your VPS panel."
   fi
 else
-  echo "ufw not installed — open port ${HTTP_PORT} in your VPS cloud firewall."
+  echo "ufw not installed — open TCP ${HTTP_PORT} in your VPS cloud firewall."
 fi
 
 sleep 2
+echo
+echo "=== Local health check ==="
+curl -s -m 5 http://127.0.0.1:${HTTP_PORT}/api/health || echo "WARN: local health check failed"
 echo
 echo "=== Done ==="
 sudo systemctl --no-pager --full status "${SERVICE_NAME}" || true
@@ -107,10 +118,4 @@ echo
 IP="$(curl -s --max-time 3 ifconfig.me || hostname -I | awk '{print $1}')"
 echo "Open in browser:  http://${IP}:${HTTP_PORT}"
 echo
-echo "Useful commands:"
-echo "  sudo systemctl status ${SERVICE_NAME}"
-echo "  sudo systemctl restart ${SERVICE_NAME}"
-echo "  sudo journalctl -u ${SERVICE_NAME} -f"
-echo
 echo "IMPORTANT: On this VPS use Encoding = H.264 (x264 software)."
-echo "Do NOT use NVIDIA NVENC or Apple VideoToolbox (no GPU / not Mac)."
