@@ -191,6 +191,13 @@ def build_ffmpeg_cmd(channel: Channel, ffmpeg: str, settings: Optional[object] =
     video = channel.video
     audio = channel.audio
 
+    # Explicit maps: the fifo muxer below cannot auto-select streams, and this
+    # also keeps the TS data/subtitle streams out of the FLV output.
+    if video.enabled:
+        cmd += ["-map", "0:v:0?"]
+    if audio.enabled:
+        cmd += ["-map", "0:a:0?"]
+
     if video.enabled:
         cmd += _video_args(video)
     else:
@@ -220,13 +227,44 @@ def build_ffmpeg_cmd(channel: Channel, ffmpeg: str, settings: Optional[object] =
 
     fmt = (channel.target_format or "rtmp").lower()
     if fmt == "rtmp" or dst.startswith("rtmp"):
-        cmd += [
-            "-f",
-            "flv",
-            "-flvflags",
-            "no_duration_filesize",
-            dst,
-        ]
+        if seamless:
+            # Without this wrapper a single broken pipe from the RTMP ingest
+            # kills ffmpeg, costing a full channel restart (restart delay plus
+            # re-probing the source). The fifo muxer reconnects the output in
+            # ~1s while the source connection and encoder keep running. Bounded
+            # attempts so a permanently dead ingest still exits and lets the
+            # supervisor do a clean restart.
+            cmd += [
+                "-f",
+                "fifo",
+                "-fifo_format",
+                "flv",
+                "-format_opts",
+                "flvflags=no_duration_filesize",
+                "-queue_size",
+                "900",
+                "-attempt_recovery",
+                "1",
+                "-recover_any_error",
+                "1",
+                "-recovery_wait_time",
+                "1",
+                "-max_recovery_attempts",
+                "10",
+                "-restart_with_keyframe",
+                "1",
+                "-drop_pkts_on_overflow",
+                "1",
+                dst,
+            ]
+        else:
+            cmd += [
+                "-f",
+                "flv",
+                "-flvflags",
+                "no_duration_filesize",
+                dst,
+            ]
     elif fmt == "mpegts":
         cmd += ["-f", "mpegts", dst]
     elif fmt == "hls":
