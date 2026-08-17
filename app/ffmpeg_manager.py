@@ -132,14 +132,16 @@ def _input_headers(channel: Channel, src: str) -> List[str]:
         "1",
         "-reconnect_on_network_error",
         "1",
+        "-reconnect_on_http_error",
+        "4xx,5xx",
         "-reconnect_delay_max",
-        "5",
+        "10",
         "-multiple_requests",
         "1",
         "-seekable",
         "0",
         "-rw_timeout",
-        "15000000",
+        "30000000",
     ]
     if header_lines:
         args += ["-headers", "".join(f"{h}\r\n" for h in header_lines)]
@@ -164,16 +166,14 @@ def build_ffmpeg_cmd(channel: Channel, ffmpeg: str, settings: Optional[object] =
         "warning",
         "-fflags",
         "+genpts+discardcorrupt+igndts",
-        "-flags",
-        "low_delay",
         "-err_detect",
         "ignore_err",
         "-analyzeduration",
-        "2000000",
+        "5000000",
         "-probesize",
-        "2000000",
+        "5000000",
         "-thread_queue_size",
-        "1024" if not seamless else "4096",
+        "1024" if not seamless else "8192",
     ]
 
     live = _is_live_protocol(src)
@@ -181,6 +181,11 @@ def build_ffmpeg_cmd(channel: Channel, ffmpeg: str, settings: Optional[object] =
         if loop_files:
             cmd += ["-stream_loop", "-1"]
         cmd += ["-re"]
+
+    # Flaky IPTV feeds report broken PTS after each HTTP reconnect; wallclock
+    # timestamps keep the output timeline continuous so players don't stall.
+    if _is_http_like(src):
+        cmd += ["-use_wallclock_as_timestamps", "1"]
 
     if _is_rtmp(src):
         cmd += ["-rtmp_live", "live", "-rw_timeout", "15000000"]
@@ -203,11 +208,12 @@ def build_ffmpeg_cmd(channel: Channel, ffmpeg: str, settings: Optional[object] =
 
     cmd += [
         "-max_muxing_queue_size",
-        "1024" if not seamless else "4096",
+        "1024" if not seamless else "8192",
+        # Never let one lagging stream hold up the muxer
+        "-max_interleave_delta",
+        "0",
         "-avoid_negative_ts",
         "make_zero",
-        "-flush_packets",
-        "1",
     ]
 
     fmt = (channel.target_format or "rtmp").lower()
@@ -275,7 +281,9 @@ def _video_args(video: VideoSettings) -> List[str]:
                 f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
             )
     if video.frame_rate and video.frame_rate.lower() != "original":
+        # Rebuild a monotonic timeline so source discontinuities don't freeze players
         vf_parts.append(f"fps={fps}")
+        vf_parts.append("setpts=N/FRAME_RATE/TB")
 
     args: List[str] = []
     if vf_parts:
@@ -374,7 +382,13 @@ def _audio_args(audio: AudioSettings) -> List[str]:
     if audio.encoding == "copy":
         return ["-c:a", "copy"]
 
-    args = ["-c:a", audio.encoding]
+    # Smooth over IPTV timestamp jumps after HTTP reconnects
+    args = [
+        "-af",
+        "aresample=async=1:min_hard_comp=0.100:first_pts=0,asetpts=N/SR/TB",
+        "-c:a",
+        audio.encoding,
+    ]
     if audio.sample_rate and audio.sample_rate.lower() != "original":
         args += ["-ar", str(audio.sample_rate)]
     else:
