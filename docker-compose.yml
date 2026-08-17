@@ -1,0 +1,8 @@
+services:
+  transcoder:
+    build: .
+    ports:
+      - "9527:9527"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

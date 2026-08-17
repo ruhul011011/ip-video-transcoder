@@ -1,0 +1,9 @@
+{
+  "http_port": 9527,
+  "debug_log": false,
+  "auto_start_on_boot": true,
+  "auto_restart_on_error": true,
+  "auto_restart_delay_sec": 3,
+  "loop_file_source": false,
+  "seamless_streaming": true
+}

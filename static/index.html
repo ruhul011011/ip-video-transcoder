@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>IP Video Transcoder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <div>
+        <h1>IP Video Transcoder</h1>
+        <p>IPTV / HTTP → RTMP live channels</p>
+      </div>
+    </div>
+    <div class="topbar-meta">
+      <span id="channel-count">0 channels</span>
+      <span class="dot">·</span>
+      <span id="running-count">0 running</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel channels-panel">
+      <div class="panel-head">
+        <h2>Channels</h2>
+        <div class="panel-actions">
+          <button type="button" class="btn btn-primary" id="btn-new">+ New Channel</button>
+          <button type="button" class="btn btn-danger" id="btn-remove" disabled>Remove</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Media Source</th>
+              <th>Memo</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="channel-rows">
+            <tr class="empty"><td colspan="4">No channels yet. Create one to start.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel config-panel">
+      <div class="panel-head">
+        <h2>Channel Settings</h2>
+        <div class="panel-actions">
+          <button type="button" class="btn" id="btn-edit" disabled>Edit</button>
+          <button type="button" class="btn btn-primary" id="btn-apply" disabled>Apply</button>
+          <button type="button" class="btn" id="btn-cancel" disabled>Cancel</button>
+        </div>
+      </div>
+
+      <form id="channel-form" class="form" autocomplete="off">
+        <fieldset disabled id="form-fields">
+          <label>
+            <span>Memo</span>
+            <input name="memo" type="text" placeholder="channel 1" />
+          </label>
+
+          <label class="full">
+            <span>Media Source (IPTV / HTTP / HLS)</span>
+            <input name="media_source" type="text" placeholder="http://example.com/live/stream" />
+          </label>
+
+          <div class="row">
+            <label>
+              <span>Target Format</span>
+              <select name="target_format">
+                <option value="rtmp">RTMP</option>
+                <option value="mpegts">MPEG-TS</option>
+                <option value="hls">HLS</option>
+              </select>
+            </label>
+            <label class="grow">
+              <span>Target URL</span>
+              <input name="target_url" type="text" placeholder="rtmp://host:1935/live/streamkey" />
+            </label>
+          </div>
+
+          <label class="full">
+            <span>User-Agent (needed for many IPTV sources)</span>
+            <input name="user_agent" type="text" placeholder="Mozilla/5.0 ..." />
+          </label>
+
+          <label class="full">
+            <span>Extra HTTP Headers (optional, one per line)</span>
+            <textarea name="http_headers" rows="2" placeholder="Referer: http://example.com/&#10;Origin: http://example.com"></textarea>
+          </label>
+
+          <div class="group">
+            <label class="check">
+              <input type="checkbox" name="video_enabled" checked />
+              <strong>Video Encoding</strong>
+            </label>
+            <div class="grid">
+              <label>
+                <span>Encoding</span>
+                <select name="video_encoding">
+                  <option value="h264_nvenc">H.264 (NVIDIA NVENC — best for Windows RTX)</option>
+                  <option value="h264_videotoolbox">H.264 (Apple VideoToolbox — Mac)</option>
+                  <option value="libx264">H.264 (x264 software)</option>
+                  <option value="copy">Copy (no re-encode)</option>
+                  <option value="h264_qsv">H.264 (Intel QSV)</option>
+                </select>
+              </label>
+              <label>
+                <span>Frame Size</span>
+                <select name="frame_size">
+                  <option value="original">Original</option>
+                  <option value="640x360">nHD (640×360)</option>
+                  <option value="854x480">480p (854×480)</option>
+                  <option value="1280x720">720p (1280×720)</option>
+                  <option value="1920x1080">1080p (1920×1080)</option>
+                </select>
+              </label>
+              <label>
+                <span>Frame Rate</span>
+                <select name="frame_rate">
+                  <option value="original">Original</option>
+                  <option value="25">25</option>
+                  <option value="30">30</option>
+                  <option value="50">50</option>
+                  <option value="60">60</option>
+                </select>
+              </label>
+              <label>
+                <span>Bitrate (Kbps)</span>
+                <input name="video_bitrate" type="number" min="100" step="50" value="800" />
+              </label>
+              <label>
+                <span>Key Frame Interval (sec)</span>
+                <input name="keyframe" type="number" min="1" max="30" value="5" />
+              </label>
+              <label class="check inline">
+                <input type="checkbox" name="cbr" />
+                <span>CBR</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="group">
+            <label class="check">
+              <input type="checkbox" name="audio_enabled" checked />
+              <strong>Audio Encoding</strong>
+            </label>
+            <div class="grid">
+              <label>
+                <span>Encoding</span>
+                <select name="audio_encoding">
+                  <option value="aac">AAC-LC</option>
+                  <option value="copy">Copy</option>
+                </select>
+              </label>
+              <label>
+                <span>Sample Rate</span>
+                <select name="sample_rate">
+                  <option value="original">Original</option>
+                  <option value="44100">44100</option>
+                  <option value="48000">48000</option>
+                </select>
+              </label>
+              <label>
+                <span>Channels</span>
+                <select name="channels">
+                  <option value="stereo">Stereo</option>
+                  <option value="mono">Mono</option>
+                  <option value="original">Original</option>
+                </select>
+              </label>
+              <label>
+                <span>Bitrate (Kbps)</span>
+                <input name="audio_bitrate" type="number" min="32" step="16" placeholder="Default (128)" />
+              </label>
+            </div>
+          </div>
+        </fieldset>
+      </form>
+
+      <div class="log-box">
+        <div class="log-title">Last log</div>
+        <pre id="last-log">Select a channel</pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="toolbar">
+    <div class="toolbar-actions">
+      <button type="button" class="btn btn-start" id="btn-start" disabled>Start Channel</button>
+      <button type="button" class="btn btn-stop" id="btn-stop" disabled>Stop Channel</button>
+      <button type="button" class="btn" id="btn-settings">Global Settings</button>
+    </div>
+    <div class="meters">
+      <div class="meter">
+        <span class="meter-label">CPU</span>
+        <div class="cpu-bars" id="cpu-bars"></div>
+        <span class="meter-value" id="cpu-avg">0%</span>
+      </div>
+      <div class="meter">
+        <span class="meter-label">MEM</span>
+        <div class="mem-bar"><span id="mem-fill"></span></div>
+        <span class="meter-value" id="mem-avg">0%</span>
+      </div>
+    </div>
+  </footer>
+
+  <div class="modal-backdrop" id="settings-modal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="settings-title">
+      <div class="modal-head">
+        <h2 id="settings-title">Global Settings</h2>
+        <button type="button" class="btn" id="btn-settings-close">Close</button>
+      </div>
+      <form id="settings-form" class="form settings-form">
+        <div class="group">
+          <strong>Web Admin</strong>
+          <label>
+            <span>HTTP Port (restart app to apply)</span>
+            <input name="http_port" type="number" min="1" max="65535" value="9527" />
+          </label>
+        </div>
+
+        <label class="check">
+          <input type="checkbox" name="debug_log" />
+          <span>Debug Log</span>
+        </label>
+
+        <label class="check">
+          <input type="checkbox" name="auto_start_on_boot" checked />
+          <span>Auto Start channels on app boot</span>
+        </label>
+
+        <div class="restart-row">
+          <label class="check">
+            <input type="checkbox" name="auto_restart_on_error" checked />
+            <span>Auto Restart Streaming on Error after</span>
+          </label>
+          <input name="auto_restart_delay_sec" type="number" min="1" max="300" value="3" class="delay-input" />
+          <span class="delay-unit">seconds</span>
+        </div>
+
+        <label class="check">
+          <input type="checkbox" name="loop_file_source" />
+          <span>Loop File/Folder Source</span>
+        </label>
+
+        <label class="check">
+          <input type="checkbox" name="seamless_streaming" checked />
+          <span>Seamless Streaming (keep reconnecting IPTV / HTTP / RTMP inputs)</span>
+        </label>
+
+        <p class="hint">
+          When enabled, if an IPTV or other input link fails, disconnects, or returns 403/timeout,
+          the channel keeps retrying automatically until you click Stop Channel.
+        </p>
+
+        <div class="panel-actions">
+          <button type="submit" class="btn btn-primary">Save Settings</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
