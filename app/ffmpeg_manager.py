@@ -206,9 +206,11 @@ def build_ffmpeg_cmd(channel: Channel, ffmpeg: str, settings: Optional[object] =
         "1024" if not seamless else "8192",
         # Bounded interleave window: a stalled audio stream must not hold video
         # packets. 0 would mean "wait forever for every stream" and makes the
-        # muxer emit long bursts instead of a steady stream.
+        # muxer emit long bursts instead of a steady stream. Keep 1s rather than
+        # a tighter window so brief audio lag doesn't force non-interleaved
+        # output, which some RTMP ingests reject.
         "-max_interleave_delta",
-        "100000",
+        "1000000",
         "-avoid_negative_ts",
         "make_zero",
         # Push each packet to the socket instead of filling the 32 KB avio buffer
