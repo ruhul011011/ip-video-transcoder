@@ -182,11 +182,6 @@ def build_ffmpeg_cmd(channel: Channel, ffmpeg: str, settings: Optional[object] =
             cmd += ["-stream_loop", "-1"]
         cmd += ["-re"]
 
-    # Flaky IPTV feeds report broken PTS after each HTTP reconnect; wallclock
-    # timestamps keep the output timeline continuous so players don't stall.
-    if _is_http_like(src):
-        cmd += ["-use_wallclock_as_timestamps", "1"]
-
     if _is_rtmp(src):
         cmd += ["-rtmp_live", "live", "-rw_timeout", "15000000"]
 
@@ -209,11 +204,16 @@ def build_ffmpeg_cmd(channel: Channel, ffmpeg: str, settings: Optional[object] =
     cmd += [
         "-max_muxing_queue_size",
         "1024" if not seamless else "8192",
-        # Never let one lagging stream hold up the muxer
+        # Bounded interleave window: a stalled audio stream must not hold video
+        # packets. 0 would mean "wait forever for every stream" and makes the
+        # muxer emit long bursts instead of a steady stream.
         "-max_interleave_delta",
-        "0",
+        "100000",
         "-avoid_negative_ts",
         "make_zero",
+        # Push each packet to the socket instead of filling the 32 KB avio buffer
+        "-flush_packets",
+        "1",
     ]
 
     fmt = (channel.target_format or "rtmp").lower()
