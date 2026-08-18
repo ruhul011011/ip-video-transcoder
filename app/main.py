@@ -104,8 +104,6 @@ def update_channel(channel_id: str, payload: ChannelUpdate):
     existing = store.get(channel_id)
     if not existing:
         raise HTTPException(404, "Channel not found")
-    if existing.status.value in ("RUNNING", "STARTING"):
-        raise HTTPException(400, "Stop the channel before editing")
     updated = store.update(channel_id, payload)
     return updated
 
@@ -145,6 +143,20 @@ def stop_channel(channel_id: str):
         return manager.stop(channel_id)
     except KeyError:
         raise HTTPException(404, "Channel not found")
+
+
+@app.post("/api/channels/{channel_id}/restart", response_model=Channel)
+def restart_channel(channel_id: str):
+    try:
+        return manager.restart(channel_id)
+    except KeyError:
+        raise HTTPException(404, "Channel not found")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(500, str(exc))
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
 
 
 @app.get("/api/stats", response_model=SystemStats)

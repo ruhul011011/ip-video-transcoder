@@ -674,6 +674,19 @@ class FFmpegManager:
             self.store.save(channel)
             return channel
 
+    def restart(self, channel_id: str) -> Channel:
+        channel = self.store.get(channel_id)
+        if not channel:
+            raise KeyError("Channel not found")
+        if channel.status in (
+            ChannelStatus.RUNNING,
+            ChannelStatus.STARTING,
+            ChannelStatus.STOPPING,
+            ChannelStatus.ERROR,
+        ):
+            self.stop(channel_id, clear_autostart=False)
+        return self.start(channel_id)
+
     def stop_all(self) -> None:
         ids = [c.id for c in self.store.list()]
         for channel_id in ids:

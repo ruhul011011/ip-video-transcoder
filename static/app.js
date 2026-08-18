@@ -37,8 +37,14 @@ function setEditing(on) {
   $("#btn-apply").disabled = !on;
   $("#btn-cancel").disabled = !on;
   const ch = selected();
-  const canEdit = !!ch && !["RUNNING", "STARTING"].includes(ch.status);
-  $("#btn-edit").disabled = !ch || on || !canEdit;
+  $("#btn-edit").disabled = !ch || on;
+  syncApplyRestart();
+}
+
+function syncApplyRestart() {
+  const ch = selected();
+  const starting = ch && ch.status === "STARTING";
+  $("#btn-apply-restart").disabled = !ch || starting;
 }
 
 function fillForm(ch) {
@@ -128,8 +134,9 @@ function renderRows() {
   $("#btn-start").disabled = !canStart;
   $("#btn-stop").disabled = !ch || !busy || state.editing;
   if (!state.editing) {
-    $("#btn-edit").disabled = !ch || busy;
+    $("#btn-edit").disabled = !ch;
   }
+  syncApplyRestart();
 }
 
 function escapeHtml(s) {
@@ -256,18 +263,40 @@ $("#btn-cancel").addEventListener("click", () => {
   fillForm(selected());
 });
 
+async function saveChannel(ch) {
+  await api(`/api/channels/${ch.id}`, {
+    method: "PUT",
+    body: JSON.stringify(formPayload()),
+  });
+}
+
 $("#btn-apply").addEventListener("click", async () => {
   const ch = selected();
   if (!ch) return;
   try {
-    await api(`/api/channels/${ch.id}`, {
-      method: "PUT",
-      body: JSON.stringify(formPayload()),
-    });
+    await saveChannel(ch);
     setEditing(false);
     await refreshChannels();
   } catch (err) {
     alert(err.message);
+  }
+});
+
+$("#btn-apply-restart").addEventListener("click", async () => {
+  const ch = selected();
+  if (!ch) return;
+  const btn = $("#btn-apply-restart");
+  btn.disabled = true;
+  try {
+    if (state.editing) {
+      await saveChannel(ch);
+      setEditing(false);
+    }
+    await api(`/api/channels/${ch.id}/restart`, { method: "POST" });
+    await refreshChannels();
+  } catch (err) {
+    alert(err.message);
+    await refreshChannels();
   }
 });
 

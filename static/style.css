@@ -296,6 +296,19 @@ input:focus, select:focus {
   background: linear-gradient(180deg, var(--accent-2), var(--accent));
 }
 
+.btn-apply-restart {
+  background: #1e4a38;
+  border-color: #2f6b52;
+  color: #c8ead9;
+  white-space: nowrap;
+}
+
+.btn-apply-restart:hover:not(:disabled) {
+  background: #245a44;
+  border-color: #3d8a68;
+  color: #e7f7ee;
+}
+
 .btn-danger {
   background: #3a1f1f;
   border-color: #6b3030;
